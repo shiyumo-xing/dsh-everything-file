@@ -1,0 +1,21 @@
+# dsh-everything-file bundle patch: replace the workspace-only @file reference
+# provider with the whole-disk NTFS provider.
+#
+# `backend: auto` prefers the bundled local `dsh-mft-index` service (no
+# Everything needed) and falls back to an already-running Everything client
+# while the service is not installed. Set backend to `mft` or `everything` to pin
+# one backend.
+#
+# Only one FileReferenceService provider may be mounted, so disabling the
+# shipped local provider is part of installing this bundle.
+- id: file-reference-local
+  disabled: true
+
+- insert:
+    - id: everything-file-reference
+      name: dsh-everything-file
+      config:
+        backend: auto
+        maxResults: 20
+        scanLimit: 300
+        recentOnEmpty: true

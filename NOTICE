@@ -1,0 +1,42 @@
+dsh-everything-file
+===================
+
+Plugin code and the bundled NTFS indexer: MIT.
+
+bin/MftIndexer.cs and bin/dsh-mft-indexer.exe
+  Original work for this plugin. The indexer reads each fixed NTFS volume's
+  MFT through FSCTL_ENUM_USN_DATA, keeps the names in memory, and answers
+  substring queries over the named pipe \\.\pipe\dsh-mft-index. It runs as the
+  dsh-mft-index Windows service (LocalSystem) because opening a volume handle
+  requires elevation.
+
+bin/Everything64.dll
+  Everything SDK IPC client library, used only by the optional Everything
+  fallback backend. Copyright (C) 2016 David Carpenter.
+  Distributed under the MIT license, reproduced below.
+
+Everything SDK license
+-----------------------
+
+Copyright (C) 2016 David Carpenter
+
+Permission is hereby granted, free of charge,
+to any person obtaining a copy of this software
+and associated documentation files (the "Software"),
+to deal in the Software without restriction,
+including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

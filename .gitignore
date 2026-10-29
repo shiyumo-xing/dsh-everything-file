@@ -1,0 +1,14 @@
+# Dependencies and build outputs
+node_modules/
+.tools/
+
+# Test artifacts
+*.tgz
+coverage/
+*.log
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

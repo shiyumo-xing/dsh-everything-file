@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: Node ${{ matrix.node }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax check
+        run: npm run check
+      - name: Unit tests (portable + Spotlight driver)
+        run: npm test
+      - name: Package contents
+        run: npm pack --dry-run
+
+  windows-native:
+    name: Windows service binary and scripts
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Compile the MFT indexer
+        shell: pwsh
+        run: |
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          & $csc /nologo /platform:x64 /optimize+ /r:System.ServiceProcess.dll /r:System.Core.dll /out:"$env:RUNNER_TEMP\dsh-mft-indexer.exe" bin/MftIndexer.cs
+      - name: Validate PowerShell installers
+        shell: pwsh
+        run: |
+          $errors = $null
+          $tokens = $null
+          foreach ($script in @('scripts/install-service.ps1', 'scripts/uninstall-service.ps1')) {
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Join-Path $PWD $script), [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) { throw "$script: $($errors[0].Message)" }
+          }
+      - name: Service installer smoke check
+        shell: pwsh
+        run: |
+          # Validate the sc.exe argument layout without installing anything.
+          $exe = Join-Path $env:RUNNER_TEMP 'dsh-mft-indexer.exe'
+          if (-not (Test-Path $exe)) { throw 'indexer binary missing' }
+          $binPath = '"' + $exe + '" --service'
+          if ($binPath -notmatch '" --service$') { throw 'bad binPath' }

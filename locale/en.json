@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Universal File Index",
+    "description": "Works out of the box: MFT/USN on Windows, Spotlight on macOS, and a portable no-admin walk index on every platform."
+  }
+}

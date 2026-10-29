@@ -1,0 +1,89 @@
+{
+  "name": "dsh-everything-file",
+  "version": "0.4.0",
+  "description": "Universal whole-disk file indexing for the DeepSeek Harness @file search: MFT/USN on Windows, Spotlight on macOS, and a portable no-admin walk index on every platform.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "bin",
+    "scripts",
+    "test",
+    "locale/*.json",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-file-reference": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-file-reference": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "author": {
+    "name": "shiyumo",
+    "email": "994558002@qq.com",
+    "url": "https://github.com/shiyumo-xing"
+  },
+  "homepage": "https://github.com/shiyumo-xing/dsh-everything-file#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shiyumo-xing/dsh-everything-file.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shiyumo-xing/dsh-everything-file/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "file-search",
+    "file-index",
+    "mft",
+    "usn-journal",
+    "spotlight",
+    "everything"
+  ],
+  "scripts": {
+    "check": "node --check index.js && node --check lib/engine.js && node --check lib/mft-engine.js && node --check lib/spotlight-engine.js && node --check lib/local-index-engine.js && node --check lib/local-index-worker.js && node --check lib/search.js",
+    "test": "node test/spotlight-engine.mjs && node test/local-index.mjs"
+  },
+  "license": "MIT"
+}
