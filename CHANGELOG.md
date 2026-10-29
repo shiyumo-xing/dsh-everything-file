@@ -8,7 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- GitHub Actions CI (Linux, macOS, Windows) and a tag-driven npm publish workflow.
+- GitHub Actions CI (Linux, macOS, Windows) and a tag-driven release workflow.
+- **Code signing pipeline**:
+  - Authenticode signing of the Windows binaries through the
+    `WINDOWS_SIGNING_PFX_BASE64` / `WINDOWS_SIGNING_PFX_PASSWORD` secrets
+    (`scripts/sign-windows.ps1`);
+  - keyless Sigstore `cosign` signature over the release checksum manifest;
+  - GitHub artifact build attestation;
+  - npm provenance on publish;
+  - GitHub Release assets (npm tarball, Windows binaries, checksums, signature bundle).
 - `CHANGELOG.md`, `LICENSE`, repository/author metadata, and publish configuration.
 - Windows service installer now copies the indexer to
   `%ProgramData%\dsh-mft-index\` before registration, so plugin upgrades cannot

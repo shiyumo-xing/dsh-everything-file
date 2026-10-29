@@ -1,4 +1,4 @@
-name: Publish to npm
+name: Release
 
 on:
   push:
@@ -6,33 +6,115 @@ on:
       - 'v*'
 
 permissions:
-  contents: read
+  contents: write
+  id-token: write
+  attestations: write
 
 jobs:
-  publish:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Verify tag matches package version
+        run: |
+          node -e "const p=require('./package.json');const t=process.env.GITHUB_REF_NAME.replace(/^v/,'');if(p.version!==t){console.error('tag',process.env.GITHUB_REF_NAME,'does not match package version',p.version);process.exit(1)}"
+      - run: npm run check
+      - run: npm test
+
+  build:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Compile the MFT indexer
+        shell: pwsh
+        run: |
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          $source = Join-Path $PWD 'bin\MftIndexer.cs'
+          $out = Join-Path $PWD 'bin\dsh-mft-indexer.exe'
+          & $csc /nologo /platform:x64 /optimize+ /r:System.ServiceProcess.dll /r:System.Core.dll /out:$out $source
+      - name: Authenticode-sign the Windows binaries (optional)
+        shell: powershell
+        env:
+          WINDOWS_SIGNING_PFX_BASE64: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+          WINDOWS_SIGNING_PFX_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PFX_PASSWORD }}
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_PFX_BASE64)) {
+            Write-Warning 'No WINDOWS_SIGNING_PFX_BASE64 secret; shipping unsigned Authenticode binaries. Keyless cosign signatures and build attestations are still produced.'
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'dsh-codesign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_BASE64))
+          $password = ConvertTo-SecureString $env:WINDOWS_SIGNING_PFX_PASSWORD -AsPlainText -Force
+          ./scripts/sign-windows.ps1 -Files @('bin/dsh-mft-indexer.exe', 'bin/everything-bridge.exe') -PfxPath $pfx -PfxPassword $password -RequireValid
+      - name: Package release assets
+        shell: pwsh
+        run: |
+          npm pack
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Move-Item (Get-ChildItem *.tgz | Select-Object -First 1) dist\
+          Copy-Item bin\dsh-mft-indexer.exe, bin\everything-bridge.exe, bin\Everything64.dll dist\
+          Get-ChildItem dist -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), [IO.Path]::GetFileName($_.Path) } |
+            Set-Content dist\SHA256SUMS.txt
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Keyless-sign the checksum manifest
+        shell: pwsh
+        run: cosign sign-blob --yes dist\SHA256SUMS.txt --bundle dist\SHA256SUMS.txt.bundle
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist/**'
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/**
+
+  publish-npm:
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
           registry-url: https://registry.npmjs.org
-      - name: Check NPM_TOKEN secret
+      - name: Publish the signed package
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::error::Repository secret NPM_TOKEN is missing. Add an npm automation token under Settings -> Secrets and variables -> Actions."
+            echo "::error::Repository secret NPM_TOKEN is missing."
             exit 1
           fi
-      - name: Verify tag matches package version
-        run: |
-          node -e "const p=require('./package.json');const t=process.env.GITHUB_REF_NAME.replace(/^v/,'');if(p.version!==t){console.error('tag',process.env.GITHUB_REF_NAME,'does not match package version',p.version);process.exit(1)}"
-      - name: Syntax check
-        run: npm run check
-      - name: Unit tests
-        run: npm test
-      - name: Publish
-        run: npm publish --access public
+          npm publish dist/*.tgz --access public --provenance
+
+  github-release:
+    needs: [build, publish-npm]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+      - name: Create or update the GitHub Release
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" --generate-notes \
+          || gh release upload "$GITHUB_REF_NAME" dist/* --clobber

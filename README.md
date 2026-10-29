@@ -109,12 +109,43 @@ Harness 插件（普通用户）──命名管道 \\.\pipe\dsh-mft-index──�
 | macOS Spotlight 查询构造/过滤/缓存/错误 | 单元测试通过（注入 runner）；真机未测 |
 | macOS / Linux 运行 | 同一纯 Node 代码，未在真机运行 |
 
+## 代码签名与发布
+
+推送 `v*` tag 后，`Release` workflow 会：
+
+1. 用 `WINDOWS_SIGNING_PFX_BASE64` / `WINDOWS_SIGNING_PFX_PASSWORD`（可选 secret）对 Windows exe 做 Authenticode 签名；未配置时跳过并输出警告；
+2. 用 `cosign sign-blob` 对 `SHA256SUMS.txt` 做 keyless 签名（Sigstore，写入透明日志）；
+3. 用 `actions/attest-build-provenance` 生成 GitHub 构建来源证明；
+4. `npm publish --provenance` 发布 npm 包（需要 `NPM_TOKEN`）；
+5. `gh release create` 创建 GitHub Release，附带 npm tgz、Windows 二进制、`SHA256SUMS.txt` 和 cosign bundle。
+
+Authenticode 需要**可信代码签名证书**；自签名证书只适合本地测试，不会消除 SmartScreen 警告。开源项目可考虑 SignPath.io（开源免费）、Azure Trusted Signing，或 Certum / SSL.com 等商业 CA。
+
+本地签名：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\sign-windows.ps1 -Files bin\dsh-mft-indexer.exe,bin\everything-bridge.exe `
+  -PfxPath .\codesign.pfx -PfxPassword (Read-Host -AsSecureString 'PFX password')
+```
+
+验证：
+
+```powershell
+Get-AuthenticodeSignature .\bin\dsh-mft-indexer.exe
+cosign verify-blob SHA256SUMS.txt --bundle SHA256SUMS.txt.bundle `
+  --certificate-identity-regexp "https://github.com/shiyumo-xing/dsh-everything-file/.github/workflows/release.yml@refs/tags/.*" `
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+gh attestation verify <file> --repo shiyumo-xing/dsh-everything-file
+```
+
 ## 已知限制
 
 - 便携索引首轮全盘遍历较慢、占内存（百万级条目数百 MB），且扫不到权限受限目录；追求速度请装 Windows MFT 服务或使用 macOS Spotlight。
 - Windows MFT 服务只索引 NTFS 固定卷。
 - 便携索引默认 15 分钟刷新一次，新文件不会立即出现；Windows MFT 走 USN，秒级可见。
-- 服务从插件目录运行：移动/删除插件目录后需重跑安装脚本。
+- Windows 服务由 `%ProgramData%\dsh-mft-index\` 下的副本运行；升级插件后重跑 `install-service.cmd` 可更新该副本。
+- 未配置代码签名证书时，Windows exe 没有 Authenticode 签名，SmartScreen 可能提示；但仍会生成 cosign 签名和构建来源证明。
 
 ## License
 
