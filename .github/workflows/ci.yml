@@ -55,7 +55,7 @@ jobs:
           foreach ($script in @('scripts/install-service.ps1', 'scripts/uninstall-service.ps1')) {
             [System.Management.Automation.Language.Parser]::ParseFile(
               (Join-Path $PWD $script), [ref]$tokens, [ref]$errors) | Out-Null
-            if ($errors.Count -gt 0) { throw "$script: $($errors[0].Message)" }
+            if ($errors.Count -gt 0) { throw "${script}: $($errors[0].Message)" }
           }
       - name: Service installer smoke check
         shell: pwsh
