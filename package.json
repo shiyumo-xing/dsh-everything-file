@@ -1,6 +1,6 @@
 {
   "name": "dsh-everything-file",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "description": "Universal whole-disk file indexing for the DeepSeek Harness @file search: MFT/USN on Windows, Spotlight on macOS, and a portable no-admin walk index on every platform.",
   "type": "module",
   "main": "index.js",
@@ -78,12 +78,12 @@
     "file-index",
     "mft",
     "usn-journal",
-    "spotlight",
-    "everything"
+    "spotlight"
   ],
   "scripts": {
-    "check": "node --check index.js && node --check lib/engine.js && node --check lib/mft-engine.js && node --check lib/spotlight-engine.js && node --check lib/local-index-engine.js && node --check lib/local-index-worker.js && node --check lib/search.js",
-    "test": "node test/spotlight-engine.mjs && node test/local-index.mjs"
+    "check": "node --check index.js && node --check lib/mft-engine.js && node --check lib/spotlight-engine.js && node --check lib/local-index-engine.js && node --check lib/local-index-worker.js && node --check lib/search.js",
+    "test": "node test/spotlight-engine.mjs && node test/local-index.mjs",
+    "test:macos": "node test/manual-macos.mjs"
   },
   "license": "MIT"
 }

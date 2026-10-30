@@ -1,5 +1,5 @@
 // dsh-mft-indexer: a self-contained NTFS index service for the DeepSeek
-// Harness @file search. It reproduces the fast part of Everything: read every
+// Harness @file search. It reproduces the fast part of an MFT indexer: read every
 // fixed NTFS volume's MFT through FSCTL_ENUM_USN_DATA, keep the names in memory,
 // and answer substring queries over a named pipe.
 //

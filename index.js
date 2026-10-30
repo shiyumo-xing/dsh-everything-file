@@ -1,19 +1,15 @@
 /**
  * dsh-everything-file: whole-disk `@file` completion for the DeepSeek Harness
- * Web GUI, backed by its own NTFS index service.
+ * Web GUI.
  *
  * The shipped provider (`@deepseek-ai/dsh-file-reference-local`) walks the
  * session workspace on every index rebuild. This provider implements the same
- * `ctx.fileReferences` seam, but answers from an in-memory NTFS index: the
- * bundled `dsh-mft-index` Windows service reads every fixed volume's MFT
- * (the same machinery Everything uses), keeps lower-cased names in memory, and
- * serves substring queries over a named pipe. The Harness process itself never
- * needs elevation; only the one-time service installation does.
- *
- * An optional Everything backend remains for machines that already run
- * Everything: when `backend: auto` finds the local service unavailable and an
- * Everything client reachable, it uses Everything instead. Once the local
- * service is installed it becomes the preferred backend.
+ * `ctx.fileReferences` seam, but answers from a whole-disk index chosen per
+ * platform: the bundled `dsh-mft-index` Windows service reads every fixed
+ * volume's MFT, macOS uses the system Spotlight index, and any platform can fall
+ * back to the portable walk index that needs no elevation or external software.
+ * The Harness process itself never needs elevation; only the one-time Windows
+ * service installation does.
  *
  * The browser `@` completion, its path grammar, and the Session Controller
  * Remote are unchanged. Picking a result still inserts ordinary prompt text;
@@ -25,7 +21,6 @@
 import z from '@deepseek-ai/schemastery'
 import { FileReferenceService, FILE_REFERENCE_PROMPT } from '@deepseek-ai/dsh-file-reference'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { EverythingEngine } from './lib/engine.js'
 import { MftIndexEngine } from './lib/mft-engine.js'
 import { SpotlightEngine } from './lib/spotlight-engine.js'
 import { LocalIndexEngine } from './lib/local-index-engine.js'
@@ -52,9 +47,6 @@ export default class EverythingFileReferenceService extends FileReferenceService
     recentOnEmpty: z.boolean().default(true),
     mftPipe: z.string().default(DEFAULT_SERVICE_PIPE),
     mftTimeoutMs: z.number().step(1).min(200).default(2500),
-    autoStartEverything: z.boolean().default(false),
-    everythingExe: z.string().default(''),
-    bridgeTimeoutMs: z.number().step(1).min(200).default(4000),
     localRoots: z.array(z.string()).default([]),
     localExcludeRoots: z.array(z.string()).default([]),
     localMaxEntries: z.number().step(1).min(1000).default(12000000),
@@ -75,6 +67,8 @@ export default class EverythingFileReferenceService extends FileReferenceService
     this.lastReportedError = ''
     /** Backend selection cache: `{ engine, at }`, re-evaluated periodically. */
     this.engineChoice = { engine: undefined, at: 0 }
+    /** Whether the removed `everything` backend has been reported once. */
+    this.legacyBackendWarned = false
     /**
      * Plain service references captured at construction. Cordis hands
      * `ctx.fileReferences` callers a proxy, and a method invoked through that
@@ -87,12 +81,6 @@ export default class EverythingFileReferenceService extends FileReferenceService
     this.mft = new MftIndexEngine({
       pipeName: this.config.mftPipe,
       timeoutMs: this.config.mftTimeoutMs,
-      logger: { warn: message => ctx.logger.warn(String(message)) },
-    })
-    this.everything = new EverythingEngine({
-      everythingExe: this.config.everythingExe,
-      autoStart: this.config.autoStartEverything,
-      timeoutMs: this.config.bridgeTimeoutMs,
       logger: { warn: message => ctx.logger.warn(String(message)) },
     })
     this.spotlight = new SpotlightEngine({
@@ -108,7 +96,6 @@ export default class EverythingFileReferenceService extends FileReferenceService
     })
     ctx.effect(() => () => {
       this.mft.dispose()
-      this.everything.dispose()
       this.spotlight.dispose()
       this.local.dispose()
     }, 'dsh-everything-file: index engines')
@@ -121,11 +108,18 @@ export default class EverythingFileReferenceService extends FileReferenceService
       if (this.engineChoice.engine !== undefined && now - this.engineChoice.at < 10000) {
         return this.engineChoice.engine
       }
-      const preferred = String(this.config.backend ?? 'auto').toLowerCase()
-      let engine
+      let preferred = String(this.config.backend ?? 'auto').toLowerCase()
       if (preferred === 'everything') {
-        engine = this.everything
-      } else if (preferred === 'spotlight') {
+        // Removed in 0.4.3: the third-party index backend and its binaries are
+        // gone. An old profile that still pins it keeps working through `auto`.
+        preferred = 'auto'
+        if (this.legacyBackendWarned !== true) {
+          this.legacyBackendWarned = true
+          this.logger.warn('dsh-everything-file: backend "everything" was removed in 0.4.3; using "auto"')
+        }
+      }
+      let engine
+      if (preferred === 'spotlight') {
         engine = this.spotlight
       } else if (preferred === 'mft') {
         engine = this.mft
@@ -137,15 +131,10 @@ export default class EverythingFileReferenceService extends FileReferenceService
         const spot = await this.spotlight.status()
         engine = spot.running ? this.spotlight : this.local
       } else if (process.platform === 'win32') {
+        // The MFT service is the fast path; a clean machine gets the portable
+        // index, which needs no elevation.
         const local = await this.mft.status()
-        if (local.running) {
-          engine = this.mft
-        } else {
-          const remote = await this.everything.status()
-          // An already-running Everything is faster than the first walk-index
-          // build; a clean machine gets the portable index.
-          engine = remote.running ? this.everything : this.local
-        }
+        engine = local.running ? this.mft : this.local
       } else {
         // Linux and other platforms: portable walk index, no external setup.
         engine = this.local
@@ -155,17 +144,6 @@ export default class EverythingFileReferenceService extends FileReferenceService
     }
     this.invalidateEngineChoice = () => {
       this.engineChoice = { engine: undefined, at: 0 }
-    }
-
-    // If this deployment explicitly uses Everything, start its client once at
-    // activation, off the keystroke path. The local service needs no warm-up.
-    if (String(this.config.backend).toLowerCase() === 'everything') {
-      ctx.effect(() => {
-        const timer = setTimeout(() => {
-          void this.everything.warm()
-        }, 1200)
-        return () => clearTimeout(timer)
-      }, 'dsh-everything-file: Everything warm start')
     }
 
     this.#installPrompts(ctx)
@@ -196,7 +174,6 @@ export default class EverythingFileReferenceService extends FileReferenceService
       scanLimit: this.config.scanLimit,
       signal,
       recentOnEmpty: this.config.recentOnEmpty,
-      indexWaitMs: 400,
       timeoutMs: engine.kind === 'mft' ? this.config.mftTimeoutMs : engine.kind === 'spotlight' ? 5000 : 5000,
     })
     if (result.error !== undefined) {
@@ -260,7 +237,7 @@ export default class EverythingFileReferenceService extends FileReferenceService
     const tool = defineTool({
       name: 'everything_search',
       description: [
-        'Search every local disk by file or folder name/path through the local NTFS index.',
+        'Search every local disk by file or folder name/path through the whole-disk index.',
         'Use it to locate files outside the current workspace; it is far faster than globbing a drive.',
         'Whitespace-separated terms are ANDed and match names; a term containing / or \\ matches the full path;',
         'ext:pdf and *.pdf filter by extension; wildcards * and ? are accepted.',
@@ -301,7 +278,6 @@ export default class EverythingFileReferenceService extends FileReferenceService
           scanLimit: Math.max(service.config.scanLimit, limit * 2),
           signal: exec.signal,
           recentOnEmpty: service.config.recentOnEmpty,
-          indexWaitMs: engine.kind === 'mft' ? 0 : 8000,
           timeoutMs: engine.kind === 'mft' ? service.config.mftTimeoutMs : 8000,
         })
         if (result.error !== undefined) {
@@ -338,13 +314,9 @@ export default class EverythingFileReferenceService extends FileReferenceService
       async execute() {
         const isMac = process.platform === 'darwin'
         const isWindows = process.platform === 'win32'
-        const [local, everything, spotlight] = isWindows
-          ? await Promise.all([
-            service.mft.status(),
-            service.everything.status(),
-            service.spotlight.status(),
-          ])
-          : [undefined, undefined, await service.spotlight.status()]
+        const [local, spotlight] = isWindows
+          ? await Promise.all([service.mft.status(), service.spotlight.status()])
+          : [undefined, await service.spotlight.status()]
         const engine = await service.resolveEngine()
         const walk = engine.kind === 'local' ? await service.local.status() : service.local.peekStatus()
         const lines = []
@@ -360,7 +332,6 @@ export default class EverythingFileReferenceService extends FileReferenceService
           lines.push(local.running
             ? `MFT service: ready=${local.ready === true} entries=${local.entries ?? 0} building=${local.building === true} buildMs=${local.buildMs ?? 0}`
             : `MFT service: not running (${local.error ? local.error.message : 'unavailable'})`)
-          lines.push(`Everything: ${everything.running ? 'client reachable' : 'not running'}`)
         }
         if (walk.running) {
           lines.push(`portable walk index: ready=${walk.ready === true} building=${walk.building === true} entries=${walk.entries ?? 0} buildMs=${walk.buildMs ?? 0}`)
@@ -400,7 +371,7 @@ function describeError(error, config, engineKind) {
     return `portable index search failed: ${error.message}; the first full-disk build can take a few minutes and retries automatically`
   }
   if (error.code === 2 || /pipe|connect|not running/i.test(error.message)) {
-    return `local index service unavailable (${error.message}); install it with dsh-everything-file\\scripts\\install-service.cmd, or set backend: everything to use an existing Everything client`
+    return `local index service unavailable (${error.message}); install it with dsh-everything-file\\scripts\\install-service.cmd, or keep using the portable walk index (backend: auto does this automatically)`
   }
   return `index search failed: ${error.message}`
 }

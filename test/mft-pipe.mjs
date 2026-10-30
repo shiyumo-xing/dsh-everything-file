@@ -91,7 +91,7 @@ for (const [label, text, opts] of [
   ['dsh/plugin', 'dsh-everything-file', {}],
   ['path', 'dsh-everything-file\\lib', { matchPath: true }],
   ['ext', 'package', { exts: 'json' }],
-  ['multi', 'everything file', {}],
+  ['multi', 'multi term', {}],
 ]) {
   const result = await query(text, 20, opts.matchPath ?? false, opts.exts ?? '')
   console.log(`\n[${label}] ${text} -> ${result.rows.length} rows, ${result.ms.toFixed(1)} ms`)

@@ -4,6 +4,98 @@ All notable changes to `dsh-everything-file` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.3] - 2026-10-30
+
+### Removed
+
+- **The optional third-party index backend and every file that shipped with it**:
+  `lib/engine.js` (the client engine), `bin/EverythingBridge.cs`,
+  `bin/everything-bridge.exe`, and the bundled `bin/Everything64.dll`, together
+  with its attribution in `NOTICE` and `LICENSE`. The package now contains only
+  this project's own code (MFT service, portable walk index,
+  Spotlight integration) and the operating system's own `mdfind`; no vendor
+  library, wrapper executable, or redistributed binary remains.
+- Configuration keys `autoStartEverything`, `everythingExe`, and
+  `bridgeTimeoutMs`. A profile that still pins `backend: everything` keeps
+  working: the value falls back to `auto` and logs one warning.
+- Everything-specific query translation from `lib/search.js`
+  (`buildEverythingSearch`, the `SORT_*` codes, and the `wfn:` prefix helper).
+  The picker's own query grammar (`ext:pdf`, `*.pdf`, path terms, multi-token
+  AND) is unchanged.
+
+### Changed
+
+- Windows `backend: auto` no longer probes a third-party client: it uses the
+  bundled MFT service when installed and the portable walk index otherwise.
+- The model-facing tool keeps its historical name `everything_search` so existing
+  prompts and configurations continue to work; it searches through this plugin's
+  own backends.
+
+## [0.4.2] - 2026-10-30
+
+### Fixed
+
+- **A query nobody had searched before could never appear, while a query answered
+  within the last cache window still did.** `fetchCandidates` aborts the previous
+  request *before* it sends the next one, so the picker's repeated asks for one
+  text looked like "every caller aborted" and 0.4.1's supersede logic killed the
+  only scan that could answer them; the empty result was then cached, which is
+  why previously answered words came straight back and new ones never did.
+  Requests for the same query now **join the scan already queued or running**
+  instead of replacing it, a caller's own abort no longer cancels a scan (only a
+  different query or `dispose()` does), and an **empty answer is never cached** —
+  a file created a moment later is found by the next keystroke.
+- `mdfind` is stopped with `SIGTERM` and only escalated to `SIGKILL` if it
+  ignores the request, so an abandoned scan closes its query cleanly in `mds`.
+
+### Documentation
+
+- macOS section now explains what to do when Spotlight itself is incomplete:
+  `mdls <file>` returning `(null)` means the file is missing from the system
+  index (new files can still be indexed through FSEvents), and
+  `mdimport -i <dir>` re-imports a folder without root while `mdutil -E /`
+  rebuilds the whole volume.
+
+## [0.4.1] - 2026-10-30
+
+### Fixed
+
+- **macOS `@` completion stalled for seconds and often showed nothing.** Every
+  keystroke spawned its own `mdfind`, and since `mds` runs one metadata scan at a
+  time the scans queued up behind each other. Typing a word meant the last query
+  waited for all previous ones; single letters (`*a*`) and IME pinyin prefixes
+  (`c`, `ce`, `ces`) scan a large part of the index, so the final query routinely
+  hit the 5 s timeout and returned zero rows — which is why Chinese names
+  appeared unreachable while English eventually arrived late. The Spotlight
+  backend now keeps one `mdfind` in flight, lets the newest request replace the
+  waiting one, and kills the superseded child; the caller's abort signal (the
+  picker closing or superseding a request) kills the running scan too. Measured
+  on macOS: a `@c e s t 测试` burst went from 5.3 s with four timed-out queries to
+  0.46 s with the final `测试` query answered in 138 ms.
+- **A single ASCII character now uses a prefix query (`a*`).** `*a*` matches most
+  of the index and reliably exceeded the deadline, so pausing after one letter
+  produced no list. Chinese single characters keep substring matching (they are
+  fast).
+- **Accented Latin names were invisible to Spotlight queries.** `mds` stores
+  names in the decomposed form; queries now include both NFC and NFD spellings
+  and results are compared after NFC normalization.
+- **A very common term could exceed the stdout buffer** and fail the whole
+  query; scanning now stops as soon as enough rows are collected.
+
+### Added
+
+- **Empty-`@` page on macOS**: recently modified files (Spotlight, last 24 h)
+  sorted by modification time, with macOS system, cache, `~/Library`, and
+  `~/private` churn filtered out. Previously the empty page was blank on macOS
+  while Windows showed recent files.
+- macOS noise filters for the recent page (`/system/`, `/library/`,
+  `/private/var/`, `/opt/homebrew/`, …).
+
+### Changed
+
+- Spotlight results no longer enter the cache when the lookup was superseded or
+  aborted, so deleting a character cannot resurrect an empty list.
+
 ## [Unreleased]
 
 ### Added

@@ -7,7 +7,7 @@
 #
 # Usage:
 #   ./scripts/sign-windows.ps1 `
-#     -Files bin/dsh-mft-indexer.exe,bin/everything-bridge.exe `
+#     -Files bin/dsh-mft-indexer.exe `
 #     -PfxPath .\codesign.pfx `
 #     -PfxPassword (Read-Host -AsSecureString "PFX password") `
 #     -RequireValid

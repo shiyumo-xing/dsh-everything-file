@@ -53,14 +53,14 @@ jobs:
           $pfx = Join-Path $env:RUNNER_TEMP 'dsh-codesign.pfx'
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_SIGNING_PFX_BASE64))
           $password = ConvertTo-SecureString $env:WINDOWS_SIGNING_PFX_PASSWORD -AsPlainText -Force
-          ./scripts/sign-windows.ps1 -Files @('bin/dsh-mft-indexer.exe', 'bin/everything-bridge.exe') -PfxPath $pfx -PfxPassword $password -RequireValid
+          ./scripts/sign-windows.ps1 -Files @('bin/dsh-mft-indexer.exe') -PfxPath $pfx -PfxPassword $password -RequireValid
       - name: Package release assets
         shell: pwsh
         run: |
           npm pack
           New-Item -ItemType Directory -Force dist | Out-Null
           Move-Item (Get-ChildItem *.tgz | Select-Object -First 1) dist\
-          Copy-Item bin\dsh-mft-indexer.exe, bin\everything-bridge.exe, bin\Everything64.dll dist\
+          Copy-Item bin\dsh-mft-indexer.exe dist\
           Get-ChildItem dist -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
             Get-FileHash -Algorithm SHA256 |
             ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), [IO.Path]::GetFileName($_.Path) } |
